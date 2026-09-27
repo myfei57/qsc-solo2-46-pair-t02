@@ -21,11 +21,15 @@ from . import trolley as trolley_module
 from . import views
 from . import wind as wind_module
 from . import zone as zone_module
+from . import alarms as alarms_module
+from .alarms import AlarmBoard
 from .audit import Audit
 from .cluster import Cluster
 from .config import ConfigError, SiteConfig
 from .crane import Crane
 from .errors import (
+    AlarmNotFound,
+    AlarmStateError,
     CraneFleetError,
     FeedbackNotConfirmed,
     HoistBusy,
@@ -92,6 +96,7 @@ class Console:
         wind: Wind,
         limit: Limit,
         audit: Audit,
+        alarms: AlarmBoard,
         cranes: dict[str, Crane],
         feedback: SpeedFeedback,
         config: SiteConfig,
@@ -106,6 +111,7 @@ class Console:
         self.wind = wind
         self.limit = limit
         self.audit = audit
+        self.alarms = alarms
         self.cranes = cranes
         self.feedback = feedback
         self.config = config
@@ -145,6 +151,10 @@ class Console:
             ("GET", "/api/config"): self.handle_config,
             ("POST", "/api/config"): self.handle_config_save,
             ("GET", "/api/audit"): self.handle_audit,
+            ("GET", "/api/alarms"): self.handle_alarms,
+            ("POST", "/api/alarms/acknowledge"): self.handle_alarm_acknowledge,
+            ("POST", "/api/alarms/resolve"): self.handle_alarm_resolve,
+            ("POST", "/api/alarms/clear"): self.handle_alarm_clear,
         }
 
     @property
@@ -192,6 +202,14 @@ class Console:
             zone_module.lock_zone(self.zone)
             zone_module.persist(self.zone, self.store)
             self.audit.record(crane_id, "zone-conflict", "pair detected")
+            pair = ",".join(conflicts[0].crane_ids)
+            self._raise_alarm(
+                location=self.zone.id,
+                kind="zone-conflict",
+                severity=alarms_module.SEVERITY_CRITICAL,
+                title=f"防碰撞区冲突 {self.zone.name}",
+                message=f"同区塔吊: {pair}",
+            )
         if mismatches:
             self.audit.record(crane_id, "occupancy-reconcile", "mismatch")
         return 200, ok(
@@ -223,6 +241,7 @@ class Console:
         except StoreError as exc:
             LOGGER.debug("best-effort zone persist skipped after clear: %s", exc)
         self.audit.record("system", "zone-clear", f"{self.zone.id} generation={generation}")
+        self._auto_clear_alarms(self.zone.id, "zone-conflict")
         return 200, ok(views.zone_view(self))
 
     # ---------------------------------------------------------------- cluster
@@ -278,6 +297,16 @@ class Console:
         faulted = bool(request.body.get("faulted", True))
         slew_module.set_fault(self.slew, faulted)
         self.audit.record(self.slew.id, "slew-fault", f"faulted={str(faulted).lower()}")
+        if faulted:
+            self._raise_alarm(
+                location=f"{self.slew.id}/slew",
+                kind="slew-fault",
+                severity=alarms_module.SEVERITY_MAJOR,
+                title="回转驱动故障",
+                message="drive fault reported",
+            )
+        else:
+            self._auto_clear_alarms(f"{self.slew.id}/slew", "slew-fault")
         return 200, ok(views.slew_view(self))
 
     # ------------------------------------------------------------------- wind
@@ -290,14 +319,22 @@ class Console:
         self.gust.observe(level)
         wind_module.latch_limits(self.wind, self.limit)
         try:
-            wind_module.alarm(self.wind, self.slew, self.hoist, self.audit)
+            sequence = wind_module.alarm(self.wind, self.slew, self.hoist, self.audit)
         except SlewStopNotAcknowledged:
             return 409, fail("slew stop was not acknowledged")
+        self._raise_alarm(
+            location="site/wind",
+            kind="wind",
+            severity=alarms_module.SEVERITY_MAJOR,
+            title="大风报警",
+            message=f"sequence={sequence} level={level:.1f} m/s",
+        )
         return 200, ok(views.wind_view(self))
 
     def handle_wind_clear(self, request: Request) -> tuple[int, dict[str, Any]]:
         wind_module.clear(self.wind, self.limit)
         slew_module.release_wind_hold(self.slew)
+        self._auto_clear_alarms("site/wind", "wind")
         return 200, ok(views.wind_view(self))
 
     # ------------------------------------------------------------------ crane
@@ -439,6 +476,14 @@ class Console:
                 self.limit, self.slew, self.trolley, self.hoist
             )
             self.audit.record("system", "limit-enforce", "axes=" + ",".join(exceeded))
+            for axis in exceeded:
+                self._raise_alarm(
+                    location=f"{self.slew.id}/limit/{axis}",
+                    kind=f"limit-{axis}",
+                    severity=alarms_module.SEVERITY_MINOR,
+                    title=f"{limit_module.AXIS_NAMES.get(axis, axis)}限位越限",
+                    message="travel envelope exceeded",
+                )
         return 200, ok(
             {
                 "exceeded": exceeded,
@@ -474,6 +519,96 @@ class Console:
         else:
             entries = self.audit.query(crane_id, limit)
         return 200, ok([entry.to_dict() for entry in entries])
+
+    # ------------------------------------------------------------------ alarms
+
+    def handle_alarms(self, request: Request) -> tuple[int, dict[str, Any]]:
+        status = request.query_first("status") or ""
+        location = request.query_first("location") or ""
+        kind = request.query_first("kind") or ""
+        limit = _positive_int(request.query_first("limit"), 100)
+        incidents = self.alarms.list(status=status, location=location, kind=kind, limit=limit)
+        return 200, ok(views.alarms_view(self, incidents))
+
+    def handle_alarm_acknowledge(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        incident_id = str(request.body.get("id") or "")
+        if not incident_id:
+            return 400, fail("id required")
+        operator = str(request.body.get("operator") or "operator")
+        try:
+            incident = self.alarms.acknowledge(incident_id, operator)
+        except AlarmNotFound:
+            return 404, fail("alarm not found")
+        except AlarmStateError as exc:
+            return 409, fail(str(exc))
+        self._persist_alarms()
+        self.audit.record(operator, "alarm-acknowledge", f"{incident.location} {incident.kind}")
+        return 200, ok(incident.to_dict())
+
+    def handle_alarm_resolve(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        incident_id = str(request.body.get("id") or "")
+        if not incident_id:
+            return 400, fail("id required")
+        operator = str(request.body.get("operator") or "operator")
+        try:
+            incident = self.alarms.resolve(incident_id, operator)
+        except AlarmNotFound:
+            return 404, fail("alarm not found")
+        except AlarmStateError as exc:
+            return 409, fail(str(exc))
+        self._persist_alarms()
+        self.audit.record(operator, "alarm-resolve", f"{incident.location} {incident.kind}")
+        return 200, ok(incident.to_dict())
+
+    def handle_alarm_clear(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        operator = str(request.body.get("operator") or "operator")
+        location = str(request.body.get("location") or "")
+        kind = str(request.body.get("kind") or "")
+        if not location and not kind:
+            return 400, fail("location or kind required")
+        closed = self.alarms.resolve_batch(
+            operator,
+            location=location,
+            kind=kind,
+            include_acknowledged=bool(request.body.get("include_acknowledged", True)),
+        )
+        self._persist_alarms()
+        for incident in closed:
+            self.audit.record(operator, "alarm-resolve", f"{incident.location} {incident.kind}")
+        return 200, ok({"resolved": len(closed)})
+
+    def _raise_alarm(
+        self, location: str, kind: str, severity: str, title: str, message: str
+    ) -> None:
+        self.alarms.report(
+            location=location,
+            kind=kind,
+            severity=severity,
+            title=title,
+            message=message,
+        )
+        self._persist_alarms()
+
+    def _auto_clear_alarms(self, location: str, kind: str) -> None:
+        closed = self.alarms.auto_resolve(location, kind)
+        if closed:
+            self._persist_alarms()
+            for incident in closed:
+                self.audit.record(
+                    "system", "alarm-auto-resolve", f"{incident.location} {incident.kind}"
+                )
+
+    def _persist_alarms(self) -> None:
+        try:
+            alarms_module.save_board(self.store, self.alarms)
+        except StoreError as exc:
+            LOGGER.debug("best-effort alarm persist skipped: %s", exc)
 
 
 def _number(value: Any) -> float:

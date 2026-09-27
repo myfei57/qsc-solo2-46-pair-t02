@@ -12,6 +12,7 @@ from . import cluster as fleet
 from . import limit as limit_module
 from . import slew as slew_module
 from . import zone as zone_module
+from .alarms import Incident
 from .config import config_view
 from .geometry import compute_separation
 from .store import store_count, store_size
@@ -185,13 +186,19 @@ def load_view(console: "Console") -> dict[str, object]:
     }
 
 
+def alarms_view(console: "Console", incidents: list[Incident]) -> dict[str, object]:
+    return {
+        "incidents": [incident.to_dict() for incident in incidents],
+        "open": console.alarms.open_count(),
+        "by_severity": console.alarms.counts_by_severity(),
+    }
+
+
 def state_view(console: "Console") -> dict[str, object]:
     """The aggregate snapshot served on ``/api/state``."""
 
-    alarm_count = console.audit.count_by_action("wind-alarm") + console.audit.count_by_action(
-        "zone-conflict"
-    )
     latest_wind_stop = console.audit.latest("wind-slew-stop")
+    open_incidents = console.alarms.list(limit=200)
     return {
         "zone": zone_view(console),
         "slew": slew_view(console),
@@ -205,7 +212,9 @@ def state_view(console: "Console") -> dict[str, object]:
         "config": config_view(console.config, console.cluster),
         "audit": console.audit.count(),
         "audit_capacity": console.audit.capacity,
-        "alarms": alarm_count,
+        "alarms": console.alarms.open_count(),
+        "alarms_by_severity": console.alarms.counts_by_severity(),
+        "incidents": [incident.to_dict() for incident in open_incidents],
         "latest_wind_stop": latest_wind_stop.to_dict() if latest_wind_stop else None,
         "store": {"keys": store_count(console.store), "bytes": store_size(console.store)},
     }

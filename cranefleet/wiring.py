@@ -11,6 +11,8 @@ from . import config as site_config
 from . import slew as slew_module
 from . import zone as zone_module
 from .audit import Audit, AuditEntry
+from . import alarms as alarms_module
+from .alarms import AlarmBoard
 from .cluster import Cluster
 from .console import Console
 from .crane import Crane
@@ -35,6 +37,7 @@ class App:
     console: Console
     store: Store
     audit: Audit
+    alarms: AlarmBoard
     snapshot_path: Path | None
 
     def shutdown(self) -> None:
@@ -42,6 +45,7 @@ class App:
 
         self.audit.record("system", "shutdown", "control service stopping")
         flush_audit(self.store, self.audit)
+        alarms_module.save_board(self.store, self.alarms)
         site_config.save_config(self.store, self.console.config)
         if self.snapshot_path is not None:
             self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,6 +83,8 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
     limit = Limit()
     audit = Audit(1000)
     restore_audit(store, audit)
+    alarms = AlarmBoard()
+    alarms_module.restore_board(store, alarms)
     feedback = SpeedFeedback("crane-1")
     slew_module.restore_feedback(feedback, store)
     cranes = {"crane-1": Crane("crane-1")}
@@ -94,13 +100,16 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
         wind=wind,
         limit=limit,
         audit=audit,
+        alarms=alarms,
         cranes=cranes,
         feedback=feedback,
         config=config,
         web_root=web_root,
     )
     audit.record("system", "boot", "control service started")
-    return App(console=console, store=store, audit=audit, snapshot_path=snapshot_path)
+    return App(
+        console=console, store=store, audit=audit, alarms=alarms, snapshot_path=snapshot_path
+    )
 
 
 def restore_boot(store: Store, snapshot_path: Path) -> None:

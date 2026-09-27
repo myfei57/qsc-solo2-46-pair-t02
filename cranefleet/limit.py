@@ -15,6 +15,12 @@ AXIS_SLEW = "slew"
 AXIS_TROLLEY = "trolley"
 AXIS_HOIST = "hoist"
 
+AXIS_NAMES = {
+    AXIS_SLEW: "回转",
+    AXIS_TROLLEY: "变幅",
+    AXIS_HOIST: "起升",
+}
+
 
 class Limit:
     """Mutable state of the travel limits of every axis."""

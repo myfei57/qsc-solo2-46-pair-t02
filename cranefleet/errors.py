@@ -89,3 +89,15 @@ class StaleRelease(LimitError):
 
 class ConfigError(CraneFleetError):
     """Raised when a site configuration payload is invalid."""
+
+
+class AlarmError(CraneFleetError):
+    """Base class for alarm-board failures."""
+
+
+class AlarmNotFound(AlarmError):
+    """Raised when an incident id does not exist on the board."""
+
+
+class AlarmStateError(AlarmError):
+    """Raised when an incident lifecycle transition is not allowed."""

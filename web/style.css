@@ -20,3 +20,30 @@ pre { background: #fff; border-radius: 10px; padding: 14px; white-space: pre-wra
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .actions button { background: #2f6fb0; color: #fff; border: 0; border-radius: 6px; padding: 9px 15px; cursor: pointer; font-size: 14px; }
 .actions button:active { background: #245486; }
+.alarm-toolbar { display: flex; align-items: center; gap: 14px; margin: 10px 0 14px; flex-wrap: wrap; }
+.alarm-toolbar select { padding: 6px 8px; border-radius: 6px; border: 1px solid #c4d0dd; font-size: 14px; }
+.alarm-summary { color: #64748b; font-size: 13px; }
+.danger-btn { background: #c0392b; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 14px; }
+.danger-btn:active { background: #962d22; }
+.alarm-list { display: flex; flex-direction: column; gap: 10px; }
+.alarm-item { background: #fff; border-radius: 10px; padding: 13px 15px; box-shadow: 0 1px 4px rgba(15,35,58,0.12); border-left: 5px solid #94a3b8; }
+.alarm-item.sev-minor { border-left-color: #b9770e; }
+.alarm-item.sev-major { border-left-color: #d35400; }
+.alarm-item.sev-critical { border-left-color: #c0392b; }
+.alarm-item.resolved { opacity: 0.6; }
+.alarm-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.alarm-title { font-weight: 600; font-size: 15px; }
+.alarm-location { color: #64748b; font-size: 13px; }
+.alarm-badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; color: #fff; }
+.alarm-badge.sev-minor { background: #b9770e; }
+.alarm-badge.sev-major { background: #d35400; }
+.alarm-badge.sev-critical { background: #c0392b; }
+.alarm-badge.status-active { background: #c0392b; }
+.alarm-badge.status-acknowledged { background: #2f6fb0; }
+.alarm-badge.status-resolved { background: #6b7a90; }
+.alarm-meta { color: #64748b; font-size: 12px; margin-top: 5px; }
+.alarm-actions { margin-left: auto; display: flex; gap: 8px; }
+.alarm-actions button { border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.alarm-actions .ack { background: #2f6fb0; color: #fff; }
+.alarm-actions .resolve { background: #2e7d52; color: #fff; }
+.alarm-empty { color: #64748b; font-size: 14px; padding: 8px 2px; }

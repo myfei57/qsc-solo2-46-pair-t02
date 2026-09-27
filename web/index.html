@@ -59,6 +59,20 @@
     </section>
 
     <section id="page-alarms" class="hidden">
+      <h2>报警台账</h2>
+      <div class="alarm-toolbar">
+        <label>状态
+          <select id="alarm-filter-status">
+            <option value="">全部</option>
+            <option value="active">待处理</option>
+            <option value="acknowledged">已确认</option>
+            <option value="resolved">已销警</option>
+          </select>
+        </label>
+        <button id="alarm-clear-site-btn" class="danger-btn">整批销警（现场）</button>
+        <span id="alarm-summary" class="alarm-summary"></span>
+      </div>
+      <div id="alarm-list" class="alarm-list"></div>
       <h2>大风与限位</h2>
       <pre id="alarm-data"></pre>
       <div class="actions">
