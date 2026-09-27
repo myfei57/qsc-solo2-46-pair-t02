@@ -10,6 +10,8 @@ from . import cluster as fleet
 from . import config as site_config
 from . import slew as slew_module
 from . import zone as zone_module
+from . import alerts as alerts_module
+from .alerts import AlarmBoard
 from .audit import Audit, AuditEntry
 from .cluster import Cluster
 from .console import Console
@@ -83,6 +85,8 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
     slew_module.restore_feedback(feedback, store)
     cranes = {"crane-1": Crane("crane-1")}
     config = site_config.load_config(store)
+    alerts = AlarmBoard()
+    alerts_module.restore(alerts, store)
 
     console = Console(
         store=store,
@@ -97,6 +101,7 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
         cranes=cranes,
         feedback=feedback,
         config=config,
+        alerts=alerts,
         web_root=web_root,
     )
     audit.record("system", "boot", "control service started")

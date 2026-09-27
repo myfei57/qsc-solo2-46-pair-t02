@@ -12,6 +12,7 @@ from .limit import Limit, latch as limit_latch, release as limit_release
 from .slew import Slew, stop_for_wind
 
 ALARM_THRESHOLD = 10.0
+CRITICAL_ALARM_THRESHOLD = 18.0
 
 
 @dataclass(frozen=True)

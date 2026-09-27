@@ -59,7 +59,36 @@
     </section>
 
     <section id="page-alarms" class="hidden">
-      <h2>大风与限位</h2>
+      <h2>活动报警</h2>
+      <div class="cards" id="alert-cards"></div>
+      <div class="actions">
+        <button id="alerts-resolve-all-btn">整批销项</button>
+        <label class="inline-check"><input type="checkbox" id="alerts-show-resolved"> 显示已销项记录</label>
+      </div>
+      <div class="table-wrap">
+        <table id="alerts-table">
+          <thead>
+            <tr>
+              <th>级别</th><th>部位</th><th>内容</th><th>次数</th>
+              <th>状态</th><th>首次/最近</th><th>超时升级</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="alerts-tbody"></tbody>
+        </table>
+        <p id="alerts-empty" class="empty-hint">当前没有活动报警。</p>
+      </div>
+      <h2>手动上报</h2>
+      <div class="actions form-row">
+        <input id="alert-location" placeholder="部位，如 crane-1/hoist">
+        <select id="alert-severity">
+          <option value="minor">一般</option>
+          <option value="major">严重</option>
+          <option value="critical">紧急</option>
+        </select>
+        <input id="alert-message" placeholder="报警内容" class="grow">
+        <button id="alert-raise-btn">上报</button>
+      </div>
+      <h2>大风与限位巡检</h2>
       <pre id="alarm-data"></pre>
       <div class="actions">
         <button id="wind-alarm-btn">大风告警 14 m/s</button>

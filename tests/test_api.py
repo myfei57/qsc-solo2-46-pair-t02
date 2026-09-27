@@ -147,6 +147,147 @@ class DispatchFlowTests(unittest.TestCase):
         status, payload = self.console.dispatch(request)
         self.assertEqual([entry["action"] for entry in payload["data"]], ["boot"])
 
+    def test_alert_raise_merges_same_location(self) -> None:
+        status, payload = dispatch(
+            self.console,
+            "POST",
+            "/api/alerts/raise",
+            {"location": "crane-1/hoist", "severity": "minor", "message": "过热"},
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["data"]["created"])
+        alarm_id = payload["data"]["alarm"]["id"]
+        status, payload = dispatch(
+            self.console,
+            "POST",
+            "/api/alerts/raise",
+            {"location": "crane-1/hoist", "severity": "major", "message": "连锁停机"},
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["data"]["merged"])
+        self.assertTrue(payload["data"]["raised"])
+        self.assertEqual(payload["data"]["alarm"]["id"], alarm_id)
+        self.assertEqual(payload["data"]["alarm"]["repeats"], 2)
+        status, payload = dispatch(self.console, "GET", "/api/alerts")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["data"]["open"]), 1)
+        self.assertEqual(payload["data"]["counts"]["by_severity"]["major"], 1)
+
+    def test_alert_raise_validates_input(self) -> None:
+        status, _ = dispatch(self.console, "POST", "/api/alerts/raise", {"severity": "minor"})
+        self.assertEqual(status, 400)
+        status, _ = dispatch(self.console, "POST", "/api/alerts/raise", {})
+        self.assertEqual(status, 400)
+        status, _ = dispatch(
+            self.console,
+            "POST",
+            "/api/alerts/raise",
+            {"location": "x", "severity": "fatal"},
+        )
+        self.assertEqual(status, 400)
+        request = Request("POST", "/api/alerts/raise", {}, {}, body_valid=False)
+        status, _ = self.console.dispatch(request)
+        self.assertEqual(status, 400)
+
+    def test_acknowledged_alarm_is_not_overwritten_and_chain_resolves(self) -> None:
+        status, payload = dispatch(
+            self.console,
+            "POST",
+            "/api/alerts/raise",
+            {"location": "loc", "severity": "minor", "message": "first"},
+        )
+        root_id = payload["data"]["alarm"]["id"]
+        status, payload = dispatch(
+            self.console, "POST", "/api/alerts/ack", {"id": root_id, "operator": "lao-wang"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["data"]["acknowledged_by"], "lao-wang")
+        status, payload = dispatch(
+            self.console,
+            "POST",
+            "/api/alerts/raise",
+            {"location": "loc", "severity": "major", "message": "later"},
+        )
+        followup_id = payload["data"]["alarm"]["id"]
+        self.assertNotEqual(followup_id, root_id)
+        # Resolving the follow-up clears the acknowledged root as one batch.
+        status, payload = dispatch(self.console, "POST", "/api/alerts/resolve", {"id": followup_id})
+        self.assertEqual(status, 200)
+        self.assertEqual({row["id"] for row in payload["data"]}, {root_id, followup_id})
+        request = Request("GET", "/api/alerts", {"resolved": ["1"]}, {})
+        status, payload = self.console.dispatch(request)
+        self.assertEqual(payload["data"]["open"], [])
+        self.assertEqual(len(payload["data"]["resolved"]), 2)
+        # Acting on a resolved id is rejected.
+        status, _ = dispatch(self.console, "POST", "/api/alerts/ack", {"id": root_id})
+        self.assertEqual(status, 409)
+        status, _ = dispatch(self.console, "POST", "/api/alerts/resolve", {"id": "missing"})
+        self.assertEqual(status, 404)
+
+    def test_resolve_all_batch_clears_every_open_alarm(self) -> None:
+        dispatch(
+            self.console, "POST", "/api/alerts/raise", {"location": "a", "severity": "minor"}
+        )
+        dispatch(
+            self.console, "POST", "/api/alerts/raise", {"location": "b", "severity": "critical"}
+        )
+        status, payload = dispatch(
+            self.console, "POST", "/api/alerts/resolve-all", {"operator": "dispatcher"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["data"]), 2)
+        status, payload = dispatch(self.console, "GET", "/api/alerts")
+        self.assertEqual(payload["data"]["counts"]["open"], 0)
+
+    def test_wind_alarm_feeds_board_and_clear_resolves(self) -> None:
+        status, payload = dispatch(self.console, "POST", "/api/wind/alarm", {"level": 20})
+        self.assertEqual(status, 200)
+        status, payload = dispatch(self.console, "GET", "/api/alerts")
+        open_alarms = payload["data"]["open"]
+        self.assertEqual(len(open_alarms), 1)
+        self.assertEqual(open_alarms[0]["location"], "wind/anemometer")
+        self.assertEqual(open_alarms[0]["severity"], "critical")
+        status, state = dispatch(self.console, "GET", "/api/state")
+        self.assertEqual(state["data"]["alerts"]["counts"]["open"], 1)
+        dispatch(self.console, "POST", "/api/wind/clear")
+        status, payload = dispatch(self.console, "GET", "/api/alerts")
+        self.assertEqual(payload["data"]["open"], [])
+
+    def test_zone_conflict_and_clear_move_alert_lifecycle(self) -> None:
+        dispatch(
+            self.console, "POST", "/api/cluster/survey", {"cranes": {"crane-2": {"x": 5, "y": 0}}}
+        )
+        dispatch(self.console, "POST", "/api/zone/occupy", {"crane_id": "crane-1"})
+        dispatch(self.console, "POST", "/api/zone/occupy", {"crane_id": "crane-2"})
+        request = Request("GET", "/api/alerts", {"location": ["zone-1"]}, {})
+        status, payload = self.console.dispatch(request)
+        self.assertEqual(len(payload["data"]["open"]), 1)
+        self.assertEqual(payload["data"]["open"][0]["severity"], "critical")
+        dispatch(self.console, "POST", "/api/zone/clear")
+        status, payload = self.console.dispatch(request)
+        self.assertEqual(payload["data"]["open"], [])
+
+    def test_alert_board_survives_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first = build_app(directory, web_root=str(WEB_ROOT))
+            status, payload = dispatch(
+                first.console,
+                "POST",
+                "/api/alerts/raise",
+                {"location": "crane-1/slew-drive", "severity": "major", "message": "故障"},
+            )
+            alarm_id = payload["data"]["alarm"]["id"]
+            dispatch(first.console, "POST", "/api/alerts/ack", {"id": alarm_id})
+            first.shutdown()
+
+            second = build_app(directory, web_root=str(WEB_ROOT))
+            status, payload = dispatch(second.console, "GET", "/api/alerts")
+            open_alarms = payload["data"]["open"]
+            self.assertEqual(len(open_alarms), 1)
+            self.assertEqual(open_alarms[0]["id"], alarm_id)
+            self.assertEqual(open_alarms[0]["status"], "acknowledged")
+            second.shutdown()
+
 
 class HttpServerTests(unittest.TestCase):
     def setUp(self) -> None:

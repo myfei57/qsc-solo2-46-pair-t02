@@ -188,9 +188,6 @@ def load_view(console: "Console") -> dict[str, object]:
 def state_view(console: "Console") -> dict[str, object]:
     """The aggregate snapshot served on ``/api/state``."""
 
-    alarm_count = console.audit.count_by_action("wind-alarm") + console.audit.count_by_action(
-        "zone-conflict"
-    )
     latest_wind_stop = console.audit.latest("wind-slew-stop")
     return {
         "zone": zone_view(console),
@@ -205,9 +202,19 @@ def state_view(console: "Console") -> dict[str, object]:
         "config": config_view(console.config, console.cluster),
         "audit": console.audit.count(),
         "audit_capacity": console.audit.capacity,
-        "alarms": alarm_count,
+        "alerts": alerts_summary(console),
         "latest_wind_stop": latest_wind_stop.to_dict() if latest_wind_stop else None,
         "store": {"keys": store_count(console.store), "bytes": store_size(console.store)},
+    }
+
+
+def alerts_summary(console: "Console") -> dict[str, object]:
+    """Open alarms plus counters for the aggregate snapshot."""
+
+    open_alarms = console.alerts.list_open()
+    return {
+        "open": [alarm.to_dict() for alarm in open_alarms],
+        "counts": console.alerts.counts(),
     }
 
 

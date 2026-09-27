@@ -20,3 +20,26 @@ pre { background: #fff; border-radius: 10px; padding: 14px; white-space: pre-wra
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .actions button { background: #2f6fb0; color: #fff; border: 0; border-radius: 6px; padding: 9px 15px; cursor: pointer; font-size: 14px; }
 .actions button:active { background: #245486; }
+.inline-check { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; }
+.form-row input, .form-row select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+.form-row .grow { flex: 1 1 200px; }
+.form-row button { align-self: stretch; }
+.table-wrap { background: #fff; border-radius: 10px; margin-top: 12px; box-shadow: 0 1px 4px rgba(15,35,58,0.12); overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+th { background: #f8fafc; color: #64748b; font-weight: 600; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+tr.sev-minor { border-left: 4px solid #38a169; }
+tr.sev-major { border-left: 4px solid #d97706; background: #fffaf0; }
+tr.sev-critical { border-left: 4px solid #c0392b; background: #fef2f2; }
+tr.resolved-row { opacity: 0.55; background: #f8fafc; }
+.alert-message { font-weight: 600; }
+.alert-link { font-weight: 400; color: #2f6fb0; font-size: 12px; }
+.repeat-badge { display: inline-block; margin-top: 4px; background: #e2e8f0; color: #475569; border-radius: 10px; padding: 1px 9px; font-size: 12px; }
+.sev-major .repeat-badge, .sev-critical .repeat-badge { background: #c0392b; color: #fff; }
+.alert-operator { font-size: 12px; color: #2f6fb0; margin-top: 2px; }
+.time-cell, .deadline-cell { white-space: nowrap; color: #475569; }
+.row-actions { white-space: nowrap; }
+.row-actions button { border: 0; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 13px; background: #2f6fb0; color: #fff; margin-right: 6px; }
+.row-actions .resolve-btn { background: #38a169; }
+.empty-hint { padding: 18px; color: #94a3b8; text-align: center; font-size: 14px; }
